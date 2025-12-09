@@ -48,8 +48,8 @@ export const ORAL_VOWELS: PhonemeData[] = [
       { word: 'rouge', sentence: 'Le feu est rouge.', highlight: 'ou' },
       { word: 'où', sentence: 'Où vas-tu ?', highlight: 'où' }
     ],
-    comparison: 'Georgian უ is too front',
-    georgianTip: 'Do not use Georgian უ directly.',
+    comparison: 'Close to Georgian უ but less front',
+    georgianTip: 'You can start from the Georgian უ, but it is not exactly the same sound.',
     fix: 'Push tongue far back, lips tight and very rounded.'
   },
   {
@@ -190,7 +190,7 @@ export const NASAL_VOWELS: PhonemeData[] = [
       { word: 'temps', sentence: 'Le temps passe.', highlight: 'em' }
     ],
     comparison: 'Not in Georgian',
-    georgianTip: "Don’t turn it into ანში /an/. It’s one sound.",
+    georgianTip: "Don’t turn it into ან. It’s one sound.",
     fix: 'Start from /a/, lower velum. Mouth open, tongue low. No "n" sound.'
   },
   {
