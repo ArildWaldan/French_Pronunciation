@@ -10,9 +10,8 @@ let audioContext: AudioContext | null = null;
 
 const getAudioContext = () => {
   if (!audioContext) {
-    // We do NOT enforce a sampleRate here. We let the browser/hardware decide (usually 44.1k or 48k).
-    // Enforcing 24000 on the context context itself can cause 'EncodingError' on some browsers/hardware
-    // when decoding standard MP3s, or simply fail to initialize.
+    // We do NOT enforce a sampleRate here. We let the browser/hardware decide.
+    // Enforcing it can cause playback issues or initialization failures on some mobile devices.
     audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
   }
   return audioContext;
@@ -29,6 +28,33 @@ export const getAudioFilename = (text: string, mode: PlayMode): string => {
     .replace(/^-|-$/g, ""); // Trim dashes
   
   return `${slug}-${mode}.mp3`;
+};
+
+// --- HELPER: Buffer Inspection ---
+// Detects if a downloaded buffer is actually text (HTML 404 or Git LFS pointer)
+// to prevent "EncodingError" when calling decodeAudioData.
+const isBufferValidAudio = (buffer: ArrayBuffer): boolean => {
+  // Check start of file for common text signatures
+  // We look at the first 50 bytes
+  const headerBytes = new Uint8Array(buffer.slice(0, 50));
+  const headerStr = String.fromCharCode(...headerBytes).trim().toLowerCase();
+
+  // 1. Check for HTML (Netlify 404 fallback)
+  if (headerStr.startsWith('<!doctype html') || headerStr.startsWith('<html')) {
+    return false;
+  }
+
+  // 2. Check for Git LFS pointer
+  if (headerStr.startsWith('version https://git-lfs')) {
+    return false;
+  }
+
+  // 3. Simple heuristic: If it's extremely small (< 200 bytes), it's likely not a valid MP3/WAV
+  if (buffer.byteLength < 200) {
+    return false;
+  }
+
+  return true;
 };
 
 // --- HELPER: Decoding ---
@@ -90,6 +116,11 @@ async function decodeAudioData(
   data: ArrayBuffer,
   ctx: AudioContext
 ): Promise<AudioBuffer> {
+  // Guard against invalid data (Text disguised as Audio)
+  if (!isBufferValidAudio(data)) {
+    throw new Error("Invalid audio data detected (likely HTML or LFS pointer)");
+  }
+
   // We clone the buffer because decodeAudioData detaches it
   const bufferCopy = data.slice(0);
   try {
@@ -169,10 +200,8 @@ async function loadAndPlay(url: string, cacheKey: string) {
     const loadPromise = async (): Promise<AudioBuffer> => {
         const response = await fetch(url);
         
-        // Guard against soft 404s (where SPA returns index.html)
-        const contentType = response.headers.get('content-type');
-        if (!response.ok || (contentType && contentType.includes('text/html'))) {
-            throw new Error(`Failed to load audio: ${url} (Server returned ${response.status} ${contentType})`);
+        if (!response.ok) {
+            throw new Error(`Failed to load audio: ${url} (Status: ${response.status})`);
         }
         
         const data = await response.arrayBuffer();
@@ -202,6 +231,7 @@ async function loadAndPlay(url: string, cacheKey: string) {
 
 export const playPhonemeAudio = async (phonemeId: string, type: 'words' | 'sentences'): Promise<void> => {
     // Explicitly match the file structure: /Audio/open-a_words.mp3
+    // Note the Capital 'A' in Audio to match the folder name exactly.
     const filename = `${phonemeId}_${type}.mp3`;
     const url = `/Audio/${filename}`;
     const cacheKey = `phoneme:${phonemeId}:${type}`;
@@ -210,8 +240,9 @@ export const playPhonemeAudio = async (phonemeId: string, type: 'words' | 'sente
     try {
         await loadAndPlay(url, cacheKey);
     } catch (e) {
-        console.warn(`Local audio failed for ${url}.`, e);
-        console.log("Attempting fallback generation...");
+        // This is where we catch the "Invalid audio data" error we threw above
+        // or a standard 404.
+        console.warn(`Local audio skipped for ${url} (using Fallback):`, e instanceof Error ? e.message : e);
         
         // 2. Fallback: Lookup data and generate on the fly
         const allVowels = [...ORAL_VOWELS, ...NASAL_VOWELS];
@@ -245,9 +276,12 @@ async function fetchAndDecode(text: string, mode: PlayMode): Promise<AudioBuffer
   try {
     const fileResponse = await fetch(localUrl);
     
+    // Check basic headers first
     const contentType = fileResponse.headers.get('content-type');
+    
     if (fileResponse.ok && (!contentType || !contentType.includes('text/html'))) {
       const fileData = await fileResponse.arrayBuffer();
+      // This will throw if the fileData is actually HTML or corrupt
       return await decodeAudioData(fileData, ctx);
     }
   } catch (e) {
@@ -305,7 +339,8 @@ async function fetchAndDecode(text: string, mode: PlayMode): Promise<AudioBuffer
   
   try {
       // Try standard decode first (for WAV headers if we added them or if API changes)
-      return await decodeAudioData(audioBytes.buffer, ctx);
+      // We do NOT use isBufferValidAudio here because audioBytes comes directly from API and has no header yet
+      return await ctx.decodeAudioData(audioBytes.buffer.slice(0));
   } catch {
       // Fallback to raw PCM decode
       return rawDecode(audioBytes);
