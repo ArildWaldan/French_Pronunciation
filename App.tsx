@@ -4,12 +4,12 @@ import { ORAL_VOWELS, NASAL_VOWELS, CONTRASTS, ROUTINE } from './data';
 import VowelCard from './components/VowelCard';
 import ContrastTrainer from './components/ContrastTrainer';
 import SmartTextGenerator from './components/SmartTextGenerator';
-import { playPronunciation } from './services/geminiService';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<VowelCategory>(VowelCategory.ORAL);
   
-  const tabs = Object.values(VowelCategory);
+  // Filter out Generator for Static Mode
+  const tabs = Object.values(VowelCategory).filter(t => t !== VowelCategory.GENERATOR);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-20">
@@ -51,7 +51,6 @@ const App: React.FC = () => {
               {activeTab === VowelCategory.NASAL && "Air goes through nose + mouth. Do NOT pronounce the 'n' at the end."}
               {activeTab === VowelCategory.CONTRAST && "These pairs change the meaning of words completely. Master these distinctions."}
               {activeTab === VowelCategory.ROUTINE && "A 5-minute daily workout to retrain your muscle memory."}
-              {activeTab === VowelCategory.GENERATOR && "Generate custom practice stories. The AI automatically colors the vowels to help you read."}
             </p>
         </div>
 
@@ -108,14 +107,6 @@ const App: React.FC = () => {
                   {step.sequence.map((seq, sIdx) => (
                      <div key={sIdx} className="bg-white p-4 rounded-lg shadow-sm flex justify-between items-center">
                         <span className="font-mono text-xl font-bold text-slate-700">{seq}</span>
-                        <button 
-                           onClick={() => playPronunciation(seq.replace(/→|\/|-/g, " "))}
-                           className="text-indigo-600 hover:text-indigo-800"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
-                              <path fillRule="evenodd" d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653Z" clipRule="evenodd" />
-                            </svg>
-                        </button>
                      </div>
                   ))}
                 </div>
@@ -127,17 +118,12 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* SMART GENERATOR */}
-        {activeTab === VowelCategory.GENERATOR && (
-            <SmartTextGenerator />
-        )}
-
       </main>
 
       {/* Footer */}
       <footer className="border-t border-slate-200 mt-12 py-8 bg-slate-100">
         <div className="max-w-5xl mx-auto px-4 text-center">
-            <p className="text-slate-300 text-[10px] mt-2">v1.2 • Hybrid Audio Engine</p>
+            <p className="text-slate-300 text-[10px] mt-2">v2.0 • Static Audio Engine</p>
         </div>
       </footer>
     </div>
