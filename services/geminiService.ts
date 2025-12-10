@@ -10,9 +10,10 @@ let audioContext: AudioContext | null = null;
 
 const getAudioContext = () => {
   if (!audioContext) {
-    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
-      sampleRate: 24000,
-    });
+    // We do NOT enforce a sampleRate here. We let the browser/hardware decide (usually 44.1k or 48k).
+    // Enforcing 24000 on the context context itself can cause 'EncodingError' on some browsers/hardware
+    // when decoding standard MP3s, or simply fail to initialize.
+    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
   }
   return audioContext;
 };
@@ -167,7 +168,13 @@ async function loadAndPlay(url: string, cacheKey: string) {
 
     const loadPromise = async (): Promise<AudioBuffer> => {
         const response = await fetch(url);
-        if (!response.ok) throw new Error(`Failed to load audio: ${url}`);
+        
+        // Guard against soft 404s (where SPA returns index.html)
+        const contentType = response.headers.get('content-type');
+        if (!response.ok || (contentType && contentType.includes('text/html'))) {
+            throw new Error(`Failed to load audio: ${url} (Server returned ${response.status} ${contentType})`);
+        }
+        
         const data = await response.arrayBuffer();
         return await decodeAudioData(data, ctx);
     };
@@ -194,28 +201,52 @@ async function loadAndPlay(url: string, cacheKey: string) {
 
 
 export const playPhonemeAudio = async (phonemeId: string, type: 'words' | 'sentences'): Promise<void> => {
+    // Explicitly match the file structure: /Audio/open-a_words.mp3
     const filename = `${phonemeId}_${type}.mp3`;
-    // Update path to match "Audio" capitalization in your project structure
     const url = `/Audio/${filename}`;
     const cacheKey = `phoneme:${phonemeId}:${type}`;
     
+    // 1. Try playing from cache or static file
     try {
         await loadAndPlay(url, cacheKey);
     } catch (e) {
-        console.error("Audio file not found, check public/Audio/ folder", e);
+        console.warn(`Local audio failed for ${url}.`, e);
+        console.log("Attempting fallback generation...");
+        
+        // 2. Fallback: Lookup data and generate on the fly
+        const allVowels = [...ORAL_VOWELS, ...NASAL_VOWELS];
+        const phoneme = allVowels.find(p => p.id === phonemeId);
+        
+        if (!phoneme) {
+            console.error(`Phoneme ID ${phonemeId} not found in data.`);
+            return;
+        }
+
+        let textToSay = "";
+        if (type === 'words') {
+             // Create a list with pauses (periods help TTS pause)
+             textToSay = phoneme.examples.map(ex => ex.word).join('. '); 
+        } else {
+             textToSay = phoneme.examples.map(ex => ex.sentence).join(' ');
+        }
+        
+        // Use playPronunciation which handles live generation + caching
+        // We use PlayMode.NORMAL for this list of words/sentences
+        await playPronunciation(textToSay, PlayMode.NORMAL);
     }
 };
 
 async function fetchAndDecode(text: string, mode: PlayMode): Promise<AudioBuffer> {
   const ctx = getAudioContext();
   const filename = getAudioFilename(text, mode);
-  // Update path to match "Audio" capitalization
   const localUrl = `/Audio/${filename}`;
 
   // 1. Try fetching static file
   try {
     const fileResponse = await fetch(localUrl);
-    if (fileResponse.ok) {
+    
+    const contentType = fileResponse.headers.get('content-type');
+    if (fileResponse.ok && (!contentType || !contentType.includes('text/html'))) {
       const fileData = await fileResponse.arrayBuffer();
       return await decodeAudioData(fileData, ctx);
     }
@@ -224,7 +255,7 @@ async function fetchAndDecode(text: string, mode: PlayMode): Promise<AudioBuffer
   }
 
   // 2. Fallback to Gemini API
-  console.log(`File not found: ${filename}. Generating via Gemini API...`);
+  console.log(`Generating audio for "${text}" via Gemini API...`);
   
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   let prompt = "";
@@ -262,6 +293,8 @@ async function fetchAndDecode(text: string, mode: PlayMode): Promise<AudioBuffer
   // Re-using the raw PCM decoder logic just in case:
   const rawDecode = (data: Uint8Array) => {
       const dataInt16 = new Int16Array(data.buffer);
+      // Gemini sends 24kHz PCM. We create a buffer with that specific rate.
+      // The AudioContext (which might be 44.1k or 48k) will play it correctly.
       const buffer = ctx.createBuffer(1, dataInt16.length, 24000);
       const channelData = buffer.getChannelData(0);
       for (let i = 0; i < dataInt16.length; i++) {
@@ -271,8 +304,10 @@ async function fetchAndDecode(text: string, mode: PlayMode): Promise<AudioBuffer
   }
   
   try {
+      // Try standard decode first (for WAV headers if we added them or if API changes)
       return await decodeAudioData(audioBytes.buffer, ctx);
   } catch {
+      // Fallback to raw PCM decode
       return rawDecode(audioBytes);
   }
 }
