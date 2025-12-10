@@ -1,0 +1,15 @@
+# Treat audio files as binary
+*.mp3 binary
+*.wav binary
+*.ogg binary
+*.m4a binary
+*.aac binary
+*.flac binary
+
+# Ensure proper handling of other binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
