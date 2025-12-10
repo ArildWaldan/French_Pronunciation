@@ -8,10 +8,17 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     plugins: [react()],
+    publicDir: 'public',
     define: {
       // This allows the code to access process.env.API_KEY during build time
       // and replaces it with the actual string value.
       'process.env.API_KEY': JSON.stringify(env.API_KEY || process.env.API_KEY || "")
+    },
+    server: {
+      // Ensure proper MIME types for audio files
+      fs: {
+        strict: false
+      }
     }
   };
 });
