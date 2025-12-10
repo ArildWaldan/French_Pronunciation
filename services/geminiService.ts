@@ -17,49 +17,58 @@ export const getAudioFilename = (text: string, mode: PlayMode): string => {
 let currentAudio: HTMLAudioElement | null = null;
 
 /**
- * Plays the aggregated audio files for a phoneme (e.g. "open-a_words.mp3")
- * directly from the /Audio/ folder using HTML5 Audio.
+ * Plays the aggregated audio files for a phoneme directly from the /audio/ folder.
+ * NOTE: The folder path is case-sensitive on Netlify/Linux. 
+ * We use '/audio/' (lowercase) as it is the standard convention for the public folder.
  */
 export const playPhonemeAudio = async (phonemeId: string, type: 'words' | 'sentences'): Promise<void> => {
-    // 1. Stop any currently playing audio to prevent overlap
+    // 1. Stop any currently playing audio
     if (currentAudio) {
         currentAudio.pause();
         currentAudio.currentTime = 0;
+        currentAudio = null;
     }
 
-    // 2. Construct path: /Audio/open-a_words.mp3
+    // 2. Construct path using lowercase 'audio' to avoid 404s on Linux servers
     const filename = `${phonemeId}_${type}.mp3`;
-    const url = `/Audio/${filename}`;
+    const url = `/audio/${filename}`;
     
-    // 3. Direct Playback (No checks, no pre-fetch)
+    console.log(`Playing: ${url}`); // Debug log to confirm path
+
+    // 3. Simple Fire-and-Forget Playback
     return new Promise((resolve, reject) => {
         const audio = new Audio(url);
         currentAudio = audio;
         
+        // Ensure volume is up
+        audio.volume = 1.0;
+
         audio.onended = () => {
             currentAudio = null;
             resolve();
         };
         
         audio.onerror = (e) => {
-            console.error(`Native Audio Error for ${url}`, e);
+            console.error(`Error playing ${url}`, e);
             currentAudio = null;
+            // We reject here so the UI knows it finished (even if failed), 
+            // but we don't throw a visible alert to the user.
             reject(new Error(`Could not play ${url}`));
         };
 
-        // Attempt playback
+        // Standard play attempt
         const playPromise = audio.play();
         if (playPromise !== undefined) {
-            playPromise.catch(e => {
-                console.error("Browser blocked playback or file missing:", e);
-                reject(e);
+            playPromise.catch(error => {
+                console.error(`Playback prevented for ${url}:`, error);
+                reject(error);
             });
         }
     });
 };
 
 /**
- * Attempts to play individual word files if they exist (e.g. /Audio/papa-normal.mp3)
+ * Legacy support for individual word playback
  */
 export const playPronunciation = async (text: string, mode: PlayMode = PlayMode.NORMAL): Promise<void> => {
     if (currentAudio) {
@@ -68,25 +77,18 @@ export const playPronunciation = async (text: string, mode: PlayMode = PlayMode.
     }
 
     const filename = getAudioFilename(text, mode);
-    const url = `/Audio/${filename}`;
+    // Ensure lowercase path here as well
+    const url = `/audio/${filename}`;
 
-    return new Promise((resolve, reject) => {
-        const audio = new Audio(url);
-        currentAudio = audio;
-        
-        audio.onended = () => {
-            currentAudio = null;
-            resolve();
-        };
-        
-        audio.onerror = (e) => {
-            console.warn(`File not found: ${url}`);
-            currentAudio = null;
-            resolve(); // Resolve silently for missing individual words
-        };
+    console.log(`Playing Individual: ${url}`);
 
-        audio.play().catch(() => resolve());
-    });
+    const audio = new Audio(url);
+    currentAudio = audio;
+    
+    // Fire and forget
+    audio.play().catch(e => console.warn("Could not play word audio", e));
+    
+    return Promise.resolve();
 };
 
 // --- STUBS ---
