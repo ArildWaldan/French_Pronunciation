@@ -39,19 +39,16 @@ const HighlightedWord: React.FC<{ word: string; highlight: string; colorClass: s
 const VowelCard: React.FC<VowelCardProps> = ({ data }) => {
   const [showExceptions, setShowExceptions] = useState(false);
   const [playing, setPlaying] = useState<'words' | 'sentences' | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const handlePlayAudio = async (type: 'words' | 'sentences') => {
       if (playing) return;
       setPlaying(type);
-      setError(null);
+      
       try {
         await playPhonemeAudio(data.id, type);
       } catch (e) {
           console.error(e);
-          setError("Audio missing");
-          // Clear error msg after 3s
-          setTimeout(() => setError(null), 3000);
+          // Error is logged to console but not shown to user to keep UI clean
       } finally {
           setPlaying(null); 
       }
@@ -121,7 +118,6 @@ const VowelCard: React.FC<VowelCardProps> = ({ data }) => {
                     Sentences
                 </button>
             </div>
-            {error && <div className="text-xs text-red-500 font-bold text-center bg-red-50 p-1 rounded border border-red-100">{error}</div>}
         </div>
       </div>
       
